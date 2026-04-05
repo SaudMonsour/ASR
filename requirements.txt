@@ -1,5 +1,5 @@
 tensorflow>=2.10
 numpy
 tqdm
-sounddevice       # optional — for microphone recording in the GUI
-matplotlib        # for waveform visualization in the GUI
+flask
+matplotlib

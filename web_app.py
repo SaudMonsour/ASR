@@ -1,8 +1,7 @@
 """
 web_app.py — Flask web interface for Arabic Speech Recognition.
 
-Provides a browser-based UI that mirrors the functionality of app.py (tkinter GUI).
-Allows users to upload WAV files and get transcriptions.
+Provides a browser-based UI for uploading WAV files and getting transcriptions.
 
 Usage:
     python web_app.py
@@ -12,7 +11,6 @@ import os
 import json
 import tempfile
 
-import numpy as np
 import tensorflow as tf
 from flask import Flask, request, jsonify, render_template_string
 
@@ -50,7 +48,7 @@ def load_model():
         id_to_char = {int(v): k for k, v in char_to_id.items()}
         model = tf.keras.models.load_model(model_path)
         model_status = "ready"
-        model_message = f"Model ready ({len(char_to_id)} characters in vocabulary)"
+        model_message = f"Model ready — {len(char_to_id)} characters in vocabulary"
     except Exception as e:
         model_status = "error"
         model_message = f"Error loading model: {e}"
@@ -63,182 +61,315 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
 <title>Arabic Speech Recognition</title>
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --accent:      #3b6fd4;
+    --accent-dark: #2f5ab8;
+    --accent-pale: #eef2fb;
+    --surface:     #ffffff;
+    --bg:          #f3f5f9;
+    --border:      #dde1ea;
+    --text-primary:   #1a1d23;
+    --text-secondary: #5a6074;
+    --text-muted:     #9399ab;
+    --success-bg:  #edf7ed;
+    --success-fg:  #1e6b24;
+    --warning-bg:  #fff8e6;
+    --warning-fg:  #7a5300;
+    --error-bg:    #fdedf0;
+    --error-fg:    #9b1c2e;
+    --radius-sm:   6px;
+    --radius-md:   10px;
+    --radius-lg:   16px;
+    --shadow:      0 2px 16px rgba(0,0,0,0.07);
+    --transition:  0.18s ease;
+  }
+
   body {
-    font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-    background: #f5f7fa;
-    color: #333;
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text-primary);
     min-height: 100vh;
     display: flex;
     flex-direction: column;
     align-items: center;
-    padding: 40px 20px;
+    padding: 48px 16px 64px;
   }
-  .card {
-    background: white;
-    border-radius: 16px;
-    box-shadow: 0 4px 24px rgba(0,0,0,0.08);
-    padding: 40px;
-    width: 100%;
-    max-width: 700px;
+
+  /* ── Header ── */
+  .page-header {
+    text-align: center;
+    margin-bottom: 32px;
   }
-  h1 {
-    font-size: 28px;
+  .page-header h1 {
+    font-size: 26px;
     font-weight: 700;
-    color: #222;
-    margin-bottom: 6px;
-    text-align: center;
+    letter-spacing: -0.3px;
+    color: var(--text-primary);
   }
-  .subtitle {
-    text-align: center;
-    color: #777;
+  .page-header p {
+    margin-top: 6px;
     font-size: 14px;
-    margin-bottom: 30px;
+    color: var(--text-secondary);
   }
-  .status-bar {
-    border-radius: 8px;
-    padding: 12px 16px;
-    margin-bottom: 24px;
-    font-size: 14px;
+
+  /* ── Card ── */
+  .card {
+    background: var(--surface);
+    border-radius: var(--radius-lg);
+    box-shadow: var(--shadow);
+    padding: 36px 32px;
+    width: 100%;
+    max-width: 680px;
+  }
+
+  /* ── Status banner ── */
+  .status-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-radius: var(--radius-md);
+    padding: 11px 14px;
+    font-size: 13px;
+    font-weight: 500;
+    margin-bottom: 28px;
+    transition: background var(--transition);
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-ready   { background: var(--success-bg); color: var(--success-fg); }
+  .status-ready   .status-dot { background: var(--success-fg); }
+  .status-loading { background: var(--warning-bg); color: var(--warning-fg); }
+  .status-loading .status-dot { background: var(--warning-fg); animation: pulse 1.2s infinite; }
+  .status-error,
+  .status-not_found { background: var(--error-bg); color: var(--error-fg); }
+  .status-error   .status-dot,
+  .status-not_found .status-dot { background: var(--error-fg); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50%       { opacity: 0.3; }
+  }
+
+  /* ── Section label ── */
+  .section-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    color: var(--text-muted);
+    margin-bottom: 8px;
+  }
+
+  /* ── Drop zone ── */
+  .drop-zone {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius-md);
+    padding: 36px 20px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color var(--transition), background var(--transition);
+    margin-bottom: 20px;
+    background: var(--bg);
+    position: relative;
+  }
+  .drop-zone:hover { border-color: var(--accent); background: var(--accent-pale); }
+  .drop-zone.drag  { border-color: var(--accent); background: var(--accent-pale); }
+
+  .drop-icon {
+    width: 44px; height: 44px;
+    margin: 0 auto 12px;
+    color: var(--text-muted);
+  }
+  .drop-icon svg { width: 100%; height: 100%; }
+
+  .drop-primary {
+    font-size: 15px;
+    font-weight: 600;
+    color: var(--text-primary);
+    margin-bottom: 4px;
+  }
+  .drop-secondary { font-size: 13px; color: var(--text-muted); }
+
+  #file-input { display: none; }
+
+  /* ── File info chip ── */
+  .file-info {
     display: flex;
     align-items: center;
     gap: 8px;
-  }
-  .status-ready   { background: #e8f5e9; color: #2e7d32; }
-  .status-loading { background: #fff8e1; color: #f57f17; }
-  .status-error   { background: #fce4ec; color: #c62828; }
-  .status-not_found { background: #fce4ec; color: #c62828; }
-
-  .upload-area {
-    border: 2px dashed #c5cae9;
-    border-radius: 12px;
-    padding: 40px 20px;
-    text-align: center;
-    cursor: pointer;
-    transition: border-color 0.2s, background 0.2s;
+    font-size: 13px;
+    color: var(--text-secondary);
+    min-height: 24px;
     margin-bottom: 20px;
-    background: #fafbff;
   }
-  .upload-area:hover { border-color: #4a90d9; background: #f0f4ff; }
-  .upload-area.drag  { border-color: #4a90d9; background: #e8f0ff; }
-  .upload-icon { font-size: 48px; margin-bottom: 12px; }
-  .upload-label { font-size: 16px; color: #555; margin-bottom: 6px; }
-  .upload-hint { font-size: 13px; color: #999; }
-  #file-input { display: none; }
+  .file-info.has-file { color: var(--text-primary); font-weight: 500; }
 
-  .waveform-container { margin-bottom: 20px; }
-  .waveform-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 6px; }
+  /* ── Waveform ── */
+  .waveform-wrap { margin-bottom: 24px; }
   canvas#waveform {
     width: 100%;
-    height: 100px;
-    background: #f0f4f8;
-    border-radius: 8px;
-    border: 1px solid #e0e0e0;
+    height: 88px;
+    background: var(--bg);
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--border);
     display: block;
   }
 
-  .file-info {
-    font-size: 13px;
-    color: #555;
-    margin-bottom: 16px;
-    min-height: 20px;
-    text-align: center;
-  }
-
-  .btn {
-    display: block;
+  /* ── Transcribe button ── */
+  .btn-transcribe {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
     width: 100%;
-    padding: 14px;
-    background: #4a90d9;
-    color: white;
-    font-size: 16px;
+    padding: 13px 20px;
+    background: var(--accent);
+    color: #fff;
+    font-size: 15px;
     font-weight: 600;
     border: none;
-    border-radius: 10px;
+    border-radius: var(--radius-md);
     cursor: pointer;
-    transition: background 0.2s;
-    margin-bottom: 24px;
+    transition: background var(--transition), opacity var(--transition), transform 0.1s;
+    margin-bottom: 28px;
+    letter-spacing: 0.1px;
   }
-  .btn:hover:not(:disabled) { background: #3a7bc8; }
-  .btn:disabled { background: #b0c4de; cursor: not-allowed; }
+  .btn-transcribe:hover:not(:disabled) {
+    background: var(--accent-dark);
+    transform: translateY(-1px);
+  }
+  .btn-transcribe:active:not(:disabled) { transform: translateY(0); }
+  .btn-transcribe:disabled { opacity: 0.45; cursor: not-allowed; }
 
-  .result-label { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 8px; }
+  /* ── Result ── */
   .result-box {
-    background: #f9f9f9;
-    border: 1px solid #e0e0e0;
-    border-radius: 10px;
-    padding: 16px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-md);
+    padding: 18px 16px;
     min-height: 80px;
     font-size: 22px;
     direction: rtl;
     text-align: right;
-    color: #222;
-    line-height: 1.6;
+    color: var(--text-primary);
+    line-height: 1.65;
     word-break: break-word;
+    transition: background var(--transition);
   }
-  .result-placeholder { color: #bbb; font-size: 15px; }
+  .result-box.has-result { background: var(--surface); }
+  .result-placeholder { color: var(--text-muted); font-size: 14px; font-style: italic; }
 
+  /* ── Divider ── */
+  .divider {
+    height: 1px;
+    background: var(--border);
+    margin: 24px 0;
+  }
+
+  /* ── Spinner ── */
   .spinner {
-    display: inline-block;
-    width: 18px; height: 18px;
-    border: 3px solid #fff;
-    border-top-color: transparent;
+    width: 16px; height: 16px;
+    border: 2px solid rgba(255,255,255,0.4);
+    border-top-color: #fff;
     border-radius: 50%;
-    animation: spin 0.7s linear infinite;
-    vertical-align: middle;
-    margin-left: 8px;
+    animation: spin 0.65s linear infinite;
   }
   @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ── Footer ── */
+  .page-footer {
+    margin-top: 28px;
+    font-size: 12px;
+    color: var(--text-muted);
+    text-align: center;
+  }
+
+  /* ── Responsive ── */
+  @media (max-width: 480px) {
+    body { padding: 24px 12px 48px; }
+    .card { padding: 24px 16px; }
+    .page-header h1 { font-size: 21px; }
+    .result-box { font-size: 18px; }
+  }
 </style>
 </head>
 <body>
-<div class="card">
-  <h1>&#x1F5E3; Arabic Speech Recognition</h1>
-  <p class="subtitle">Upload a WAV audio file to transcribe it using the trained CTC model</p>
 
-  <div id="status-bar" class="status-bar status-{{ status }}">
-    <span id="status-icon">{{ '✅' if status == 'ready' else '⏳' if status == 'loading' else '❌' }}</span>
+<header class="page-header">
+  <h1>Arabic Speech Recognition</h1>
+  <p>Upload a WAV file to transcribe spoken Arabic with the trained CTC model</p>
+</header>
+
+<main class="card">
+
+  <div id="status-banner" class="status-banner status-{{ status }}">
+    <span class="status-dot"></span>
     <span id="status-msg">{{ message }}</span>
   </div>
 
-  <div class="upload-area" id="drop-zone" onclick="document.getElementById('file-input').click()">
-    <div class="upload-icon">&#x1F4C2;</div>
-    <div class="upload-label">Click or drag &amp; drop a WAV file here</div>
-    <div class="upload-hint">16 kHz mono WAV, max 10 seconds recommended</div>
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" role="button" tabindex="0" aria-label="Upload WAV file">
+    <div class="drop-icon">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+        <polyline points="17 8 12 3 7 8"/>
+        <line x1="12" y1="3" x2="12" y2="15"/>
+      </svg>
+    </div>
+    <div class="drop-primary">Click or drag a WAV file here</div>
+    <div class="drop-secondary">16 kHz mono WAV, max 10 seconds recommended</div>
     <input type="file" id="file-input" accept=".wav,audio/wav" />
   </div>
 
   <div class="file-info" id="file-info">No file selected</div>
 
-  <div class="waveform-container">
-    <div class="waveform-label">Waveform</div>
+  <div class="waveform-wrap">
+    <div class="section-label">Waveform</div>
     <canvas id="waveform"></canvas>
   </div>
 
-  <button class="btn" id="transcribe-btn" onclick="transcribe()" disabled>
-    &#x25B6; Transcribe
+  <button class="btn-transcribe" id="transcribe-btn" onclick="transcribe()" disabled>
+    <span id="btn-label">Transcribe</span>
   </button>
 
-  <div class="result-label">Result</div>
+  <div class="section-label">Transcription</div>
   <div class="result-box" id="result-box">
-    <span class="result-placeholder">Transcription will appear here...</span>
+    <span class="result-placeholder">The transcription will appear here after you upload and process a file.</span>
   </div>
-</div>
+
+</main>
+
+<footer class="page-footer">
+  CTC model &mdash; Conv1D &rarr; Bidirectional GRU &rarr; Dense
+</footer>
 
 <script>
+"use strict";
 let selectedFile = null;
 
-const dropZone = document.getElementById('drop-zone');
-const fileInput = document.getElementById('file-input');
-const fileInfo = document.getElementById('file-info');
+const dropZone     = document.getElementById('drop-zone');
+const fileInput    = document.getElementById('file-input');
+const fileInfo     = document.getElementById('file-info');
 const transcribeBtn = document.getElementById('transcribe-btn');
-const resultBox = document.getElementById('result-box');
+const resultBox    = document.getElementById('result-box');
 const waveformCanvas = document.getElementById('waveform');
-const ctx = waveformCanvas.getContext('2d');
+const wCtx         = waveformCanvas.getContext('2d');
 
-// Drag and drop
+/* ── keyboard activation for drop zone ── */
+dropZone.addEventListener('keydown', (e) => {
+  if (e.key === 'Enter' || e.key === ' ') {
+    e.preventDefault();
+    fileInput.click();
+  }
+});
+
+/* ── drag and drop ── */
 dropZone.addEventListener('dragover', (e) => { e.preventDefault(); dropZone.classList.add('drag'); });
-dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag'));
+['dragleave', 'dragend'].forEach(ev => dropZone.addEventListener(ev, () => dropZone.classList.remove('drag')));
 dropZone.addEventListener('drop', (e) => {
   e.preventDefault();
   dropZone.classList.remove('drag');
@@ -251,37 +382,54 @@ fileInput.addEventListener('change', () => {
 
 function handleFile(file) {
   selectedFile = file;
-  fileInfo.textContent = `${file.name}  (${(file.size / 1024).toFixed(1)} KB)`;
+  const kb = (file.size / 1024).toFixed(1);
+  fileInfo.textContent = file.name + '  \u00b7  ' + kb + ' KB';
+  fileInfo.classList.add('has-file');
   transcribeBtn.disabled = false;
   drawWaveform(file);
 }
 
+/* ── waveform rendering ── */
 function drawWaveform(file) {
   const reader = new FileReader();
   reader.onload = (e) => {
     const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-    audioCtx.decodeAudioData(e.target.result, (buffer) => {
-      const data = buffer.getChannelData(0);
-      renderWaveform(data);
+    audioCtx.decodeAudioData(e.target.result).then((buffer) => {
+      renderWaveform(buffer.getChannelData(0));
+    }).catch(() => {
+      clearWaveform();
     });
   };
   reader.readAsArrayBuffer(file);
 }
 
-function renderWaveform(samples) {
-  const W = waveformCanvas.offsetWidth;
-  const H = waveformCanvas.offsetHeight;
+function clearWaveform() {
+  const W = waveformCanvas.offsetWidth || 600;
+  const H = 88;
   waveformCanvas.width = W;
   waveformCanvas.height = H;
-  ctx.clearRect(0, 0, W, H);
+  wCtx.clearRect(0, 0, W, H);
+}
+
+function renderWaveform(samples) {
+  const W = waveformCanvas.offsetWidth || 600;
+  const H = 88;
+  waveformCanvas.width  = W * (window.devicePixelRatio || 1);
+  waveformCanvas.height = H * (window.devicePixelRatio || 1);
+  waveformCanvas.style.width  = W + 'px';
+  waveformCanvas.style.height = H + 'px';
+  wCtx.scale(window.devicePixelRatio || 1, window.devicePixelRatio || 1);
+
+  wCtx.clearRect(0, 0, W, H);
 
   const mid = H / 2;
-  ctx.strokeStyle = '#cccccc';
-  ctx.beginPath(); ctx.moveTo(0, mid); ctx.lineTo(W, mid); ctx.stroke();
+  wCtx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue('--border').trim() || '#dde1ea';
+  wCtx.lineWidth = 1;
+  wCtx.beginPath(); wCtx.moveTo(0, mid); wCtx.lineTo(W, mid); wCtx.stroke();
 
   const step = Math.max(1, Math.floor(samples.length / W));
-  ctx.strokeStyle = '#4a90d9';
-  ctx.lineWidth = 1;
+  const accentColor = getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#3b6fd4';
+
   for (let i = 0; i < W; i++) {
     const start = i * step;
     const chunk = samples.slice(start, start + step);
@@ -289,19 +437,25 @@ function renderWaveform(samples) {
     for (const v of chunk) { if (v < min) min = v; if (v > max) max = v; }
     const yTop = mid - max * (mid - 4);
     const yBot = mid - min * (mid - 4);
-    ctx.beginPath();
-    ctx.moveTo(i, yTop);
-    ctx.lineTo(i, yBot);
-    ctx.stroke();
+    wCtx.strokeStyle = accentColor;
+    wCtx.lineWidth = 1;
+    wCtx.beginPath();
+    wCtx.moveTo(i, yTop);
+    wCtx.lineTo(i, Math.max(yBot, yTop + 1));
+    wCtx.stroke();
   }
 }
 
+/* ── transcription request ── */
 async function transcribe() {
   if (!selectedFile) return;
 
   transcribeBtn.disabled = true;
-  transcribeBtn.innerHTML = '&#x23F3; Processing... <span class="spinner"></span>';
-  resultBox.innerHTML = '<span class="result-placeholder">Processing audio...</span>';
+  document.getElementById('btn-label').textContent = 'Processing...';
+  transcribeBtn.insertAdjacentHTML('beforeend', '<span class="spinner" id="spinner"></span>');
+
+  resultBox.innerHTML = '<span class="result-placeholder">Processing audio\u2026</span>';
+  resultBox.classList.remove('has-result');
 
   const formData = new FormData();
   formData.append('file', selectedFile);
@@ -310,16 +464,23 @@ async function transcribe() {
     const resp = await fetch('/transcribe', { method: 'POST', body: formData });
     const data = await resp.json();
     if (data.error) {
-      resultBox.innerHTML = `<span style="color:#c62828">Error: ${data.error}</span>`;
+      resultBox.innerHTML = '<span style="color:var(--error-fg);font-size:14px">Error: ' + escapeHtml(data.error) + '</span>';
     } else {
-      resultBox.textContent = data.text || '(empty result)';
+      resultBox.textContent = data.text || '(no output)';
+      resultBox.classList.add('has-result');
     }
   } catch (err) {
-    resultBox.innerHTML = `<span style="color:#c62828">Network error: ${err}</span>`;
+    resultBox.innerHTML = '<span style="color:var(--error-fg);font-size:14px">Network error: ' + escapeHtml(String(err)) + '</span>';
   } finally {
     transcribeBtn.disabled = false;
-    transcribeBtn.innerHTML = '&#x25B6; Transcribe';
+    document.getElementById('btn-label').textContent = 'Transcribe';
+    const sp = document.getElementById('spinner');
+    if (sp) sp.remove();
   }
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
 </script>
 </body>

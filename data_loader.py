@@ -75,7 +75,7 @@ def build_manifest(wav_dir: str, lab_dir: str, output_path: str) -> list:
         for entry in entries:
             f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
-    print(f"✅ Manifest saved: {output_path}  ({len(entries)} utterances)")
+    print(f"Manifest saved: {output_path}  ({len(entries)} utterances)")
     return entries
 
 
