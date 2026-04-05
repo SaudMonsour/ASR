@@ -1,9 +1,12 @@
-# Data (large files, not tracked)
+# Data (large files — not tracked)
 data/
 manifests/
+
+# Model checkpoints
+checkpoints/*.keras
 checkpoints/
 
-# Temp recording from the GUI
+# Temp recording created by the desktop GUI
 temp_recording.wav
 
 # Python
@@ -34,4 +37,3 @@ desktop.ini
 
 # Jupyter
 .ipynb_checkpoints/
-*.ipynb
