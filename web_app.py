@@ -1,57 +1,41 @@
 """
 web_app.py — Flask web interface for Arabic Speech Recognition.
 
-Provides a browser-based UI for uploading WAV files and getting transcriptions.
+Provides a browser-based UI for uploading WAV files and getting transcriptions
+using OpenAI's Whisper model (whisper-base).
 
 Usage:
     python web_app.py
 """
 
 import os
-import json
 import tempfile
+import threading
 
-import tensorflow as tf
+import whisper
 from flask import Flask, request, jsonify, render_template_string
-
-import config
-from data_loader import load_wav, wav_to_mel
-from model import ctc_greedy_decode
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max upload
 
 # Global model state
 model = None
-id_to_char = None
 model_status = "loading"
 model_message = "Loading model..."
 
 
 def load_model():
-    global model, id_to_char, model_status, model_message
-
-    model_path = os.path.join(config.CHECKPOINT_DIR, "model_final.keras")
-    vocab_path = os.path.join(config.CHECKPOINT_DIR, "vocab.json")
-
-    if not os.path.exists(model_path) or not os.path.exists(vocab_path):
-        model_status = "not_found"
-        model_message = (
-            "Model not found. Place model_final.keras and vocab.json "
-            "in the checkpoints/ folder, then restart the server."
-        )
-        return
-
+    global model, model_status, model_message
     try:
-        with open(vocab_path, "r", encoding="utf-8") as f:
-            char_to_id = json.load(f)
-        id_to_char = {int(v): k for k, v in char_to_id.items()}
-        model = tf.keras.models.load_model(model_path)
+        model = whisper.load_model("base")
         model_status = "ready"
-        model_message = f"Model ready — {len(char_to_id)} characters in vocabulary"
+        model_message = "Model ready"
     except Exception as e:
         model_status = "error"
         model_message = f"Error loading model: {e}"
+
+
+threading.Thread(target=load_model, daemon=True).start()
 
 
 HTML_TEMPLATE = """<!DOCTYPE html>
@@ -145,10 +129,8 @@ HTML_TEMPLATE = """<!DOCTYPE html>
   .status-ready   .status-dot { background: var(--success-fg); }
   .status-loading { background: var(--warning-bg); color: var(--warning-fg); }
   .status-loading .status-dot { background: var(--warning-fg); animation: pulse 1.2s infinite; }
-  .status-error,
-  .status-not_found { background: var(--error-bg); color: var(--error-fg); }
-  .status-error   .status-dot,
-  .status-not_found .status-dot { background: var(--error-fg); }
+  .status-error   { background: var(--error-bg); color: var(--error-fg); }
+  .status-error   .status-dot { background: var(--error-fg); }
 
   @keyframes pulse {
     0%, 100% { opacity: 1; }
@@ -302,7 +284,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <header class="page-header">
   <h1>Arabic Speech Recognition</h1>
-  <p>Upload a WAV file to transcribe spoken Arabic with the trained CTC model</p>
+  <p>Upload a WAV file to transcribe spoken Arabic with Whisper</p>
 </header>
 
 <main class="card">
@@ -321,7 +303,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
       </svg>
     </div>
     <div class="drop-primary">Click or drag a WAV file here</div>
-    <div class="drop-secondary">16 kHz mono WAV, max 10 seconds recommended</div>
+    <div class="drop-secondary">WAV audio file, max 50 MB</div>
     <input type="file" id="file-input" accept=".wav,audio/wav" />
   </div>
 
@@ -344,7 +326,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 </main>
 
 <footer class="page-footer">
-  CTC model &mdash; Conv1D &rarr; Bidirectional GRU &rarr; Dense
+  Powered by OpenAI Whisper (whisper-base)
 </footer>
 
 <script>
@@ -482,6 +464,23 @@ async function transcribe() {
 function escapeHtml(str) {
   return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
 }
+
+/* ── auto-poll status until model is ready ── */
+(function pollStatus() {
+  const banner = document.getElementById('status-banner');
+  const msg    = document.getElementById('status-msg');
+  if (banner.classList.contains('status-loading')) {
+    setTimeout(() => {
+      fetch('/status').then(r => r.json()).then(d => {
+        msg.textContent = d.message;
+        banner.className = 'status-banner status-' + d.status;
+        if (d.status === 'loading') {
+          pollStatus();
+        }
+      }).catch(() => pollStatus());
+    }, 2000);
+  }
+})();
 </script>
 </body>
 </html>
@@ -504,37 +503,30 @@ def status():
 
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
-    if model is None:
-        return jsonify({"error": model_message}), 503
+    if model_status != "ready":
+        return jsonify({"error": f"Model not ready: {model_message}"}), 503
 
     if "file" not in request.files:
         return jsonify({"error": "No file uploaded"}), 400
 
-    file = request.files["file"]
-    if not file.filename.lower().endswith(".wav"):
-        return jsonify({"error": "Only WAV files are supported"}), 400
+    audio_file = request.files["file"]
+    if audio_file.filename == "":
+        return jsonify({"error": "Empty filename"}), 400
 
-    with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
+    suffix = os.path.splitext(audio_file.filename)[1] or ".wav"
+    with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
-        file.save(tmp_path)
+        audio_file.save(tmp_path)
 
     try:
-        audio = load_wav(tmp_path)
-        mel = wav_to_mel(audio)
-        mel_batch = tf.expand_dims(mel, axis=0)
-        prediction = model.predict(mel_batch, verbose=0)
-        decoded = ctc_greedy_decode(prediction, id_to_char)
-        text = decoded[0] if decoded else ""
+        result = model.transcribe(tmp_path, language="ar")
+        text = result["text"].strip()
         return jsonify({"text": text})
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     finally:
-        try:
-            os.unlink(tmp_path)
-        except OSError:
-            pass
+        os.unlink(tmp_path)
 
 
 if __name__ == "__main__":
-    load_model()
     app.run(host="0.0.0.0", port=5000, debug=False)
