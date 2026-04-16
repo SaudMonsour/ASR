@@ -1,7 +1,7 @@
 """
 web_app.py — Flask web interface for Arabic Speech Recognition.
 
-Provides a browser-based UI for uploading WAV files and getting transcriptions
+Provides a browser-based UI for uploading media files and getting transcriptions
 using OpenAI's Whisper model (whisper-base).
 
 Usage:
@@ -14,11 +14,11 @@ import threading
 
 import whisper
 from flask import Flask, request, jsonify, render_template_string
+from werkzeug.exceptions import RequestEntityTooLarge
 from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max upload
-ALLOWED_EXTENSIONS = {".wav"}
+app.config["MAX_CONTENT_LENGTH"] = 200 * 1024 * 1024
 
 # Global model state
 model = None
@@ -286,7 +286,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
 
 <header class="page-header">
   <h1>Arabic Speech Recognition</h1>
-  <p>Upload a WAV file to transcribe spoken Arabic with Whisper</p>
+  <p>Upload an audio or video file to transcribe spoken Arabic with Whisper</p>
 </header>
 
 <main class="card">
@@ -296,7 +296,7 @@ HTML_TEMPLATE = """<!DOCTYPE html>
     <span id="status-msg">{{ message }}</span>
   </div>
 
-  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" role="button" tabindex="0" aria-label="Upload WAV file">
+  <div class="drop-zone" id="drop-zone" onclick="document.getElementById('file-input').click()" role="button" tabindex="0" aria-label="Upload audio or video file">
     <div class="drop-icon">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
         <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
@@ -304,9 +304,9 @@ HTML_TEMPLATE = """<!DOCTYPE html>
         <line x1="12" y1="3" x2="12" y2="15"/>
       </svg>
     </div>
-    <div class="drop-primary">Click or drag a WAV file here</div>
-    <div class="drop-secondary">WAV audio file, max 50 MB</div>
-    <input type="file" id="file-input" accept=".wav,audio/wav" />
+    <div class="drop-primary">Click or drag any audio/video file here</div>
+    <div class="drop-secondary">MP3, MP4, WAV, M4A, WebM, and other FFmpeg-supported files up to 200 MB</div>
+    <input type="file" id="file-input" />
   </div>
 
   <div class="file-info" id="file-info">No file selected</div>
@@ -438,7 +438,7 @@ async function transcribe() {
   document.getElementById('btn-label').textContent = 'Processing...';
   transcribeBtn.insertAdjacentHTML('beforeend', '<span class="spinner" id="spinner"></span>');
 
-  resultBox.innerHTML = '<span class="result-placeholder">Processing audio\u2026</span>';
+  resultBox.innerHTML = '<span class="result-placeholder">Processing file\u2026</span>';
   resultBox.classList.remove('has-result');
 
   const formData = new FormData();
@@ -446,7 +446,7 @@ async function transcribe() {
 
   try {
     const resp = await fetch('/transcribe', { method: 'POST', body: formData });
-    const data = await resp.json();
+    const data = await resp.json().catch(() => ({ error: 'The server returned an unreadable response.' }));
     if (data.error) {
       resultBox.innerHTML = '<span style="color:var(--error-fg);font-size:14px">Error: ' + escapeHtml(data.error) + '</span>';
     } else {
@@ -503,6 +503,15 @@ def status():
     return jsonify({"status": model_status, "message": model_message})
 
 
+@app.route("/favicon.ico")
+def favicon():
+    return "", 204
+
+
+@app.errorhandler(RequestEntityTooLarge)
+def file_too_large(error):
+    return jsonify({"error": "File is too large. Upload a file up to 200 MB."}), 413
+
 @app.route("/transcribe", methods=["POST"])
 def transcribe():
     if model_status != "ready":
@@ -516,20 +525,18 @@ def transcribe():
         return jsonify({"error": "Empty filename"}), 400
 
     filename = secure_filename(audio_file.filename)
-    suffix = os.path.splitext(filename)[1].lower()
-    if suffix not in ALLOWED_EXTENSIONS:
-        return jsonify({"error": "Only WAV audio files are supported"}), 400
+    suffix = os.path.splitext(filename)[1].lower() or ".upload"
 
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
         audio_file.save(tmp_path)
 
     try:
-        result = model.transcribe(tmp_path, language="ar")
+        result = model.transcribe(tmp_path, language="ar", fp16=False)
         text = result["text"].strip()
         return jsonify({"text": text})
     except Exception as e:
-        return jsonify({"error": str(e)}), 500
+        return jsonify({"error": f"Could not transcribe this file. Upload an audio/video file FFmpeg can read. Details: {e}"}), 500
     finally:
         os.unlink(tmp_path)
 
