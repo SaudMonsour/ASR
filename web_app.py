@@ -14,9 +14,11 @@ import threading
 
 import whisper
 from flask import Flask, request, jsonify, render_template_string
+from werkzeug.utils import secure_filename
 
 app = Flask(__name__)
 app.config["MAX_CONTENT_LENGTH"] = 50 * 1024 * 1024  # 50 MB max upload
+ALLOWED_EXTENSIONS = {".wav"}
 
 # Global model state
 model = None
@@ -513,7 +515,11 @@ def transcribe():
     if audio_file.filename == "":
         return jsonify({"error": "Empty filename"}), 400
 
-    suffix = os.path.splitext(audio_file.filename)[1] or ".wav"
+    filename = secure_filename(audio_file.filename)
+    suffix = os.path.splitext(filename)[1].lower()
+    if suffix not in ALLOWED_EXTENSIONS:
+        return jsonify({"error": "Only WAV audio files are supported"}), 400
+
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as tmp:
         tmp_path = tmp.name
         audio_file.save(tmp_path)

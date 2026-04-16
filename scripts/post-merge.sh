@@ -1,4 +1,4 @@
 #!/bin/bash
 set -e
 
-pip install -r requirements.txt --quiet
+python -m pip install --no-cache-dir -r requirements.txt --quiet
