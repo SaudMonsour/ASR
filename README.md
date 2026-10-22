@@ -1,79 +1,21 @@
-# Arabic Speech Recognition
+# التعرّف على الكلام العربي
 
-A browser-based Arabic speech recognition app powered by [OpenAI Whisper](https://github.com/openai/whisper). Upload a WAV file and get an accurate Arabic transcription instantly — no training, no setup, no API keys required.
+تطبيق ويب لتحويل المقاطع الصوتية العربية إلى نص، باستخدام نموذج Whisper المدرّب مسبقًا.
 
----
+## الوظائف
+- رفع الصوت بصيغة WAV وعرض الموجة الصوتية قبل المعالجة.
+- تفريغ الكلام العربي وإظهار النتيجة من اليمين إلى اليسار.
+- واجهة متجاوبة، دون حاجة إلى تدريب نموذج جديد أو مفتاح خدمة صوتية مدفوعة.
 
-## Features
+## آلية العمل
+يحمّل التطبيق نموذج Whisper الأساسي عند بدء التشغيل. في الاستخدام الأول تُنزّل الأوزان تلقائيًا، بحجم تقريبي 140 ميغابايت. يرسل الملف إلى النموذج مع تحديد اللغة العربية.
 
-- Automatic transcription of Arabic speech from WAV audio files
-- Pre-trained Whisper model — works out of the box on first run
-- Waveform preview rendered in the browser before transcription
-- Right-to-left Arabic output display
-- Clean, responsive web interface
+يدعم التطبيق صوتًا أحادي القناة أو متعدد القنوات، مع إعادة أخذ العينات داخليًا. الحد الموثّق لحجم الملف 50 ميغابايت. جودة التفريغ تعتمد على جودة التسجيل والنطق والضوضاء.
 
----
+## الملفات
+`web_app.py` هو خادم Flask ونقطة الدخول على المنفذ 5000، و`requirements.txt` يحدد مكتبات المشروع، ومنها Whisper وFlask وNumPy.
 
-## How It Works
+## الترخيص
+يذكر التوثيق الأصلي ترخيص MIT للكود ولأوزان Whisper المنشورة من OpenAI. [مصدر Whisper](https://github.com/openai/whisper).
 
-At startup the app loads OpenAI's `whisper-base` model (downloaded automatically on first run, ~140 MB). When you upload a WAV file, Whisper processes it with the Arabic language hint and returns the transcription as Arabic text.
-
----
-
-## Project Structure
-
-```
-├── web_app.py           Flask web server — main entry point (port 5000)
-├── requirements.txt     Python dependencies
-├── README.md            This file
-├── .gitignore
-├── .replit
-└── scripts/
-    └── post-merge.sh    Post-merge dependency installer
-```
-
----
-
-## Getting Started
-
-**Install dependencies**
-
-```bash
-pip install -r requirements.txt
-```
-
-**Run the server**
-
-```bash
-python web_app.py
-```
-
-Open `http://localhost:5000` in your browser. The status banner turns green once the model is ready. On the first run, Whisper downloads the model weights automatically (~140 MB).
-
----
-
-## Usage
-
-1. Click the upload area or drag and drop a WAV file onto it.
-2. A waveform preview is drawn automatically.
-3. Click **Transcribe**.
-4. The Arabic transcription appears in the result box (right-to-left).
-
-**Supported audio:** WAV format, mono or stereo, any sample rate (Whisper resamples internally). Files up to 50 MB are accepted.
-
----
-
-## Dependencies
-
-| Package          | Purpose                              |
-|------------------|--------------------------------------|
-| `openai-whisper` | Pre-trained multilingual ASR model   |
-| `flask`          | Web framework and HTTP server        |
-| `numpy`          | Numerical array operations           |
-
----
-
-## License
-
-Project code is released under the MIT License.
-The Whisper model weights are released by OpenAI under the MIT License.
+[المرجع التقني الإنجليزي الكامل](README.en.md).
